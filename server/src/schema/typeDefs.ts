@@ -6,6 +6,8 @@ export const typeDefs = gql`
     reddit
     devto
     producthunt
+    lobsters
+    github
   }
 
   type FeedItem {

@@ -49,6 +49,11 @@ export async function getRankedFeed(topic: string): Promise<FeedItem[]> {
     return [];
   }
 
+  // Performance optimization: Limit articles before expensive operations
+  // This reduces API costs for embeddings and summaries
+  const MAX_ARTICLES_TO_PROCESS = 30;
+  const articlesToProcess = rawArticles.slice(0, MAX_ARTICLES_TO_PROCESS);
+
   // 1) Embed the user topic ONCE
   let topicEmbedding: number[] = [];
   try {
@@ -58,7 +63,7 @@ export async function getRankedFeed(topic: string): Promise<FeedItem[]> {
   }
 
   // 2) Build list of article texts (just titles for now)
-  const docTexts = rawArticles.map((article) => article.title);
+  const docTexts = articlesToProcess.map((article) => article.title);
 
   // 3) Batch embed all article texts in one call
   let articleEmbeddings: number[][] = [];
@@ -71,7 +76,7 @@ export async function getRankedFeed(topic: string): Promise<FeedItem[]> {
   }
 
   // 4) Generate AI summaries for all articles
-  const articlesForSummary = rawArticles.map((article) => ({
+  const articlesForSummary = articlesToProcess.map((article) => ({
     title: article.title,
     url: article.url,
   }));
@@ -82,14 +87,14 @@ export async function getRankedFeed(topic: string): Promise<FeedItem[]> {
   } catch (err) {
     console.error("Error generating summaries:", err);
     // Fallback to placeholder summaries
-    summaries = rawArticles.map(
+    summaries = articlesToProcess.map(
       (article) => `Article about "${article.title}" from ${article.source}`
     );
   }
 
   const items: FeedItem[] = [];
 
-  rawArticles.forEach((article, index) => {
+  articlesToProcess.forEach((article, index) => {
     const recencyScore = computeRecencyScore(article.createdAt);
     const popularityScore = computePopularityScore(article.points ?? null);
     let relevanceScore = 0;
@@ -125,5 +130,8 @@ export async function getRankedFeed(topic: string): Promise<FeedItem[]> {
 
   items.sort((a, b) => b.score - a.score);
 
-  return items;
+  // Limit to top 20 results for performance
+  // This reduces processing time and API costs for embeddings/summaries
+  const MAX_RESULTS = 20;
+  return items.slice(0, MAX_RESULTS);
 }

@@ -1,6 +1,7 @@
 import { ApolloServer } from "apollo-server";
 import { typeDefs } from "./schema/typeDefs";
 import { resolvers } from "./schema/resolvers";
+import { rateLimiter, getClientIdentifier } from "./middleware/rateLimiter";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -37,6 +38,17 @@ const server = new ApolloServer({
   },
   persistedQueries: false, // Disable persisted queries to avoid cache issues
   introspection: true, // Enable GraphQL introspection
+  context: ({ req }) => {
+    // Rate limiting
+    const clientId = getClientIdentifier(req);
+    const rateLimitResult = rateLimiter.check(clientId);
+
+    return {
+      req,
+      clientId,
+      rateLimit: rateLimitResult,
+    };
+  },
 });
 
 const port = process.env.PORT || 4000;

@@ -1,4 +1,4 @@
-export type DataSource = "hackernews" | "reddit" | "devto" | "producthunt";
+export type DataSource = "hackernews" | "reddit" | "devto" | "producthunt" | "lobsters" | "github";
 
 export interface RawArticle {
   id: string;

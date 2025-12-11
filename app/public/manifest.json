@@ -1,0 +1,24 @@
+{
+  "name": "SignalFeed - AI-Powered Feed Ranking",
+  "short_name": "SignalFeed",
+  "description": "Enter a topic and let AI curate a ranked feed for you using semantic relevance, recency, and popularity.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e293b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "news", "utilities"],
+  "lang": "en-US",
+  "dir": "ltr",
+  "scope": "/",
+  "prefer_related_applications": false
+}
+

@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useEffect, useRef, useMemo, useCallback, memo } from "react";
 import Image from "next/image";
 import { client } from "./lib/graphqlClient";
 import { GET_RANKED_FEED } from "./graphql/getRankedFeed";
+import { validateTopic, sanitizeTopic } from "./utils/validation";
 
-type DataSource = "hackernews" | "reddit" | "devto" | "producthunt";
+type DataSource = "hackernews" | "reddit" | "devto" | "producthunt" | "lobsters" | "github";
 
 type FeedItem = {
   id: string;
@@ -23,20 +24,40 @@ type FeedItem = {
 function SkeletonLoader() {
   return (
     <div className="space-y-4">
-      {[...Array(3)].map((_, i) => (
+      {[...Array(5)].map((_, i) => (
         <div
           key={i}
-          className="rounded-lg border border-slate-800 bg-slate-900 p-4 animate-pulse"
+          className="rounded-lg border border-slate-800 bg-slate-900 p-5 relative overflow-hidden"
+          style={{
+            animation: `fadeInUp 0.5s ease-out ${i * 0.1}s both`,
+          }}
         >
-          <div className="flex justify-between items-start mb-3">
-            <div className="h-6 bg-slate-700 rounded w-3/4"></div>
-            <div className="h-5 bg-slate-700 rounded w-16"></div>
+          {/* Shimmer effect */}
+          <div
+            className="absolute inset-0 pointer-events-none overflow-hidden"
+          >
+            <div
+              className="absolute inset-0"
+              style={{
+                background: "linear-gradient(90deg, transparent 0%, rgba(148, 163, 184, 0.4) 50%, transparent 100%)",
+                width: "200%",
+                height: "100%",
+                animation: "shimmer 1.5s ease-in-out infinite",
+              }}
+            ></div>
           </div>
-          <div className="h-4 bg-slate-700 rounded w-full mb-2"></div>
-          <div className="h-4 bg-slate-700 rounded w-5/6"></div>
-          <div className="mt-4 flex gap-2">
-            <div className="h-2 bg-slate-700 rounded w-20"></div>
-            <div className="h-2 bg-slate-700 rounded w-20"></div>
+          <div className="flex justify-between items-start gap-4 mb-3 relative z-0">
+            <div className="flex-1">
+              <div className="h-4 bg-slate-700 rounded w-20 mb-2"></div>
+              <div className="h-6 bg-slate-700 rounded w-3/4 mb-2"></div>
+            </div>
+            <div className="h-6 bg-slate-700 rounded w-16"></div>
+          </div>
+          <div className="h-4 bg-slate-700 rounded w-full mb-2 relative z-0"></div>
+          <div className="h-4 bg-slate-700 rounded w-5/6 mb-4 relative z-0"></div>
+          <div className="space-y-2 relative z-0">
+            <div className="h-2 bg-slate-700 rounded w-full"></div>
+            <div className="h-2 bg-slate-700 rounded w-4/5"></div>
             <div className="h-2 bg-slate-700 rounded w-20"></div>
           </div>
         </div>
@@ -45,7 +66,7 @@ function SkeletonLoader() {
   );
 }
 
-function ScoreBar({
+const ScoreBar = memo(function ScoreBar({
   label,
   value,
   color,
@@ -54,7 +75,7 @@ function ScoreBar({
   value: number;
   color: string;
 }) {
-  const percentage = Math.round(value * 100);
+  const percentage = useMemo(() => Math.round(value * 100), [value]);
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs text-slate-400 w-20">{label}</span>
@@ -69,10 +90,10 @@ function ScoreBar({
       </span>
     </div>
   );
-}
+});
 
-function SourceBadge({ source }: { source: DataSource }) {
-  const sourceConfig = {
+const SourceBadge = memo(function SourceBadge({ source }: { source: DataSource }) {
+  const sourceConfig = useMemo(() => ({
     hackernews: {
       label: "HN",
       color: "bg-orange-500/20 text-orange-300 border-orange-500/30",
@@ -89,7 +110,15 @@ function SourceBadge({ source }: { source: DataSource }) {
       label: "PH",
       color: "bg-purple-500/20 text-purple-300 border-purple-500/30",
     },
-  };
+    lobsters: {
+      label: "Lobsters",
+      color: "bg-red-500/20 text-red-300 border-red-500/30",
+    },
+    github: {
+      label: "GitHub",
+      color: "bg-gray-500/20 text-gray-300 border-gray-500/30",
+    },
+  }), []);
 
   const config = sourceConfig[source] || sourceConfig.hackernews;
 
@@ -100,32 +129,59 @@ function SourceBadge({ source }: { source: DataSource }) {
       {config.label}
     </span>
   );
-}
+});
 
-function FeedItemCard({ item, index }: { item: FeedItem; index: number }) {
+const FeedItemCard = memo(function FeedItemCard({ item, index }: { item: FeedItem; index: number }) {
   const [copied, setCopied] = useState(false);
 
-  const copyLink = async (e: React.MouseEvent) => {
+  // Cleanup timeout on unmount or when copied changes
+  useEffect(() => {
+    if (copied) {
+      const timeoutId = setTimeout(() => setCopied(false), 2000);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [copied]);
+
+  const copyLink = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    await navigator.clipboard.writeText(item.url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+    try {
+      await navigator.clipboard.writeText(item.url);
+      setCopied(true);
+    } catch (err) {
+      // Handle clipboard errors gracefully (e.g., browser extensions blocking clipboard access)
+      console.warn("Failed to copy to clipboard:", err);
+      // Fallback: try using the older execCommand method
+      try {
+        const textArea = document.createElement("textarea");
+        textArea.value = item.url;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+        setCopied(true);
+      } catch (fallbackErr) {
+        console.error("Fallback copy method also failed:", fallbackErr);
+      }
+    }
+  }, [item.url]);
 
   return (
-    <div
+    <article
       className="group rounded-lg border border-slate-800 bg-slate-900 p-5 hover:border-indigo-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-0.5"
       style={{
         animation: `fadeInUp 0.5s ease-out ${index * 0.1}s both`,
       }}
+      aria-labelledby={`article-title-${item.id}`}
     >
       <div className="flex justify-between items-start gap-4 mb-3">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
             <SourceBadge source={item.source} />
           </div>
-          <h2 className="text-lg font-semibold text-slate-50 group-hover:text-indigo-300 transition-colors">
+          <h2 id={`article-title-${item.id}`} className="text-lg font-semibold text-slate-50 group-hover:text-indigo-300 transition-colors">
             {item.title}
           </h2>
         </div>
@@ -135,8 +191,9 @@ function FeedItemCard({ item, index }: { item: FeedItem; index: number }) {
           </span>
           <button
             onClick={copyLink}
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-slate-800 rounded-md"
-            title="Copy link"
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-slate-800 rounded-md focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900"
+            aria-label={copied ? "Link copied to clipboard" : "Copy article link"}
+            title={copied ? "Link copied" : "Copy link"}
           >
             {copied ? (
               <svg
@@ -197,7 +254,8 @@ function FeedItemCard({ item, index }: { item: FeedItem; index: number }) {
         href={item.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors font-medium"
+        className="inline-flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900 rounded"
+        aria-label={`Read article: ${item.title} (opens in new tab)`}
       >
         Read article
         <svg
@@ -205,6 +263,7 @@ function FeedItemCard({ item, index }: { item: FeedItem; index: number }) {
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
+          aria-hidden="true"
         >
           <path
             strokeLinecap="round"
@@ -213,33 +272,179 @@ function FeedItemCard({ item, index }: { item: FeedItem; index: number }) {
             d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
           />
         </svg>
+        <span className="sr-only">(opens in new tab)</span>
       </a>
-    </div>
+    </article>
   );
-}
+});
 
 export default function HomePage() {
   const [topic, setTopic] = useState("");
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<FeedItem[]>([]);
+  const INITIAL_ITEMS_TO_SHOW = 12;
+
+  const [itemsToShow, setItemsToShow] = useState(INITIAL_ITEMS_TO_SHOW);
   const [error, setError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [searchCache, setSearchCache] = useState<Map<string, FeedItem[]>>(new Map());
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const loadMoreRef = useRef<HTMLButtonElement | null>(null);
+  const ITEMS_PER_LOAD = 8;
+
+  // Memoize displayed items to avoid unnecessary recalculations
+  const displayedItems = useMemo(() => {
+    return items.slice(0, itemsToShow);
+  }, [items, itemsToShow]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    // Capture ref values at effect time to avoid stale closures
+    const timerRef = debounceTimerRef;
+    const controllerRef = abortControllerRef;
+    
+    return () => {
+      const timer = timerRef.current;
+      const controller = controllerRef.current;
+      if (timer) {
+        clearTimeout(timer);
+      }
+      if (controller) {
+        controller.abort();
+      }
+    };
+  }, []);
+
+  const loadMore = useCallback(() => {
+    setItemsToShow((prev) => {
+      // Use functional update to read current items state
+      // This avoids stale closure issues with items.length
+      return Math.min(prev + ITEMS_PER_LOAD, items.length);
+    });
+  }, [items.length]); // Recreate callback when items.length changes to ensure fresh value
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    // Only set up observer if there are more items to load and button exists
+    if (!loadMoreRef.current || items.length <= itemsToShow) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && items.length > itemsToShow) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1, rootMargin: "100px" } // Start loading 100px before button is visible
+    );
+
+    const currentRef = loadMoreRef.current;
+    observer.observe(currentRef);
+
+    return () => {
+      if (currentRef) {
+        observer.unobserve(currentRef);
+      }
+      observer.disconnect();
+    };
+  }, [items.length, itemsToShow, loadMore]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!topic.trim()) return;
+    
+    // Validate input
+    const validation = validateTopic(topic);
+    if (!validation.isValid) {
+      setValidationError(validation.error || "Invalid input");
+      setError(null);
+      return;
+    }
 
+    // Sanitize and use validated topic
+    const sanitizedTopic = sanitizeTopic(topic);
+    setValidationError(null);
+
+    // Clear previous debounce timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Abort previous request if still pending
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Check cache first
+    const cacheKey = sanitizedTopic.toLowerCase();
+    if (searchCache.has(cacheKey)) {
+      const cachedItems = searchCache.get(cacheKey)!;
+      setItems(cachedItems);
+      setItemsToShow(INITIAL_ITEMS_TO_SHOW);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    // Show loading state immediately (optimistic UI)
     setLoading(true);
     setError(null);
+    setItems([]); // Clear previous results immediately
+    setItemsToShow(INITIAL_ITEMS_TO_SHOW);
+
+    // Create new abort controller for this request
+    abortControllerRef.current = new AbortController();
+
     try {
-      const data = await client.request(GET_RANKED_FEED, { topic });
-      setItems(data.getRankedFeed);
-    } catch (err: any) {
+      const data = await client.request<{ getRankedFeed: FeedItem[] }>(GET_RANKED_FEED, { topic: sanitizedTopic });
+      const feedItems = data.getRankedFeed;
+      
+      // Cache the results
+      setSearchCache((prev) => {
+        const newCache = new Map(prev);
+        // Keep only last 10 searches in cache
+        if (newCache.size >= 10) {
+          const firstKey = newCache.keys().next().value;
+          if (firstKey !== undefined) {
+            newCache.delete(firstKey);
+          }
+        }
+        newCache.set(cacheKey, feedItems);
+        return newCache;
+      });
+      
+      setItems(feedItems);
+      setItemsToShow(INITIAL_ITEMS_TO_SHOW);
+    } catch (err: unknown) {
+      // Don't show error if request was aborted
+      if (err instanceof Error && err.name === "AbortError") {
+        return;
+      }
+      
       console.error("GraphQL Error:", err);
-      const errorMessage =
-        err?.response?.errors?.[0]?.message ||
-        err?.message ||
-        "Failed to fetch feed. Please check your connection and try again.";
-      setError(errorMessage);
+      // Handle rate limit errors specifically
+      const graphqlError = (err as { 
+        response?: { 
+          errors?: Array<{ 
+            extensions?: { 
+              code?: string; 
+              retryAfter?: number; 
+            }; 
+            message?: string 
+          }> 
+        } 
+      })?.response?.errors?.[0];
+      if (graphqlError?.extensions?.code === "RATE_LIMIT_EXCEEDED") {
+        const retryAfter = graphqlError.extensions.retryAfter || 60;
+        setError(
+          `Rate limit exceeded. Please wait ${retryAfter} seconds before trying again.`
+        );
+      } else {
+        const errorMessage =
+          graphqlError?.message ||
+          (err as { message?: string })?.message ||
+          "Failed to fetch feed. Please check your connection and try again.";
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -258,7 +463,34 @@ export default function HomePage() {
             transform: translateY(0);
           }
         }
+        @keyframes shimmer {
+          0% {
+            transform: translateX(-100%);
+          }
+          100% {
+            transform: translateX(100%);
+          }
+        }
+        /* Skip link for keyboard navigation */
+        .skip-link {
+          position: absolute;
+          top: -40px;
+          left: 0;
+          background: #4f46e5;
+          color: white;
+          padding: 8px 16px;
+          text-decoration: none;
+          z-index: 100;
+          border-radius: 4px;
+        }
+        .skip-link:focus {
+          top: 0;
+        }
       `}</style>
+      {/* Skip to main content link for keyboard navigation */}
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
       <div className="w-full max-w-3xl">
         <header className="flex items-center gap-3 mb-6">
           <Image
@@ -270,7 +502,7 @@ export default function HomePage() {
           />
         </header>
 
-        <section className="mb-8">
+        <section className="mb-8" id="main-content">
           <h1 className="text-3xl font-semibold mb-2">
             Let AI find the signal in your feed.
           </h1>
@@ -283,18 +515,62 @@ export default function HomePage() {
           </p>
         </section>
 
-        <form onSubmit={onSubmit} className="flex gap-2 mb-8">
-          <input
-            className="flex-1 rounded-lg px-4 py-3 bg-slate-900 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-slate-50 placeholder:text-slate-500"
-            placeholder="e.g. AI agents in production"
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            disabled={loading}
-          />
+        {/* Live region for screen reader announcements */}
+        <div
+          aria-live="polite"
+          aria-atomic="true"
+          className="sr-only"
+          id="announcements"
+        >
+          {loading && "Loading articles..."}
+          {!loading && items.length > 0 && `Found ${items.length} articles`}
+          {error && `Error: ${error}`}
+        </div>
+
+        <form onSubmit={onSubmit} className="flex gap-2 mb-8" aria-label="Search for articles">
+          <div className="flex-1 relative">
+            <label htmlFor="topic-input" className="sr-only">
+              Search topic
+            </label>
+            <input
+              id="topic-input"
+              className={`w-full rounded-lg px-4 py-3 bg-slate-900 border transition-all text-slate-50 placeholder:text-slate-500 ${
+                validationError
+                  ? "border-red-500 focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  : "border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              }`}
+              placeholder="e.g. AI agents in production"
+              value={topic}
+              onChange={(e) => {
+                setTopic(e.target.value);
+                // Clear validation error when user types
+                if (validationError) {
+                  setValidationError(null);
+                }
+              }}
+              disabled={loading}
+              aria-invalid={!!validationError}
+              aria-describedby={validationError ? "validation-error" : "search-description"}
+              aria-label="Enter a topic to search for articles"
+            />
+            <div id="search-description" className="sr-only">
+              Enter a topic and press search to find relevant articles from multiple sources
+            </div>
+            {validationError && (
+              <div
+                id="validation-error"
+                role="alert"
+                className="absolute -bottom-6 left-0 text-xs text-red-400 mt-1"
+              >
+                {validationError}
+              </div>
+            )}
+          </div>
           <button
             type="submit"
-            className="px-6 py-3 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20"
+            className="px-6 py-3 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900"
             disabled={loading}
+            aria-label={loading ? "Searching for articles" : "Search for articles"}
           >
             {loading ? (
               <span className="flex items-center gap-2">
@@ -325,23 +601,41 @@ export default function HomePage() {
           </button>
         </form>
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-900/20 border border-red-500/50 rounded-lg text-red-300 text-sm">
-            {error}
+        {(error || validationError) && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="mb-6 p-4 bg-red-900/20 border border-red-500/50 rounded-lg text-red-300 text-sm"
+          >
+            {validationError || error}
           </div>
         )}
 
         {loading && <SkeletonLoader />}
 
-        {!loading && items.length > 0 && (
-          <div className="space-y-4">
-            {items.map((item, index) => (
-              <FeedItemCard key={item.id} item={item} index={index} />
-            ))}
-          </div>
+        {!loading && displayedItems.length > 0 && (
+          <>
+            <div className="space-y-4" role="feed" aria-label="Article feed">
+              {displayedItems.map((item, index) => (
+                <FeedItemCard key={item.id} item={item} index={index} />
+              ))}
+            </div>
+            {items.length > itemsToShow && (
+              <div className="mt-6 flex justify-center">
+                <button
+                  ref={loadMoreRef}
+                  onClick={loadMore}
+                  className="px-6 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-medium transition-all duration-200 hover:border-indigo-500/50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900"
+                  aria-label={`Load more articles. ${items.length - itemsToShow} remaining`}
+                >
+                  Load More ({items.length - itemsToShow} remaining)
+                </button>
+              </div>
+            )}
+          </>
         )}
 
-        {!loading && items.length === 0 && !error && (
+        {!loading && items.length === 0 && !error && !validationError && (
           <section className="mt-8 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
             <h2 className="text-sm font-semibold text-slate-200 mb-2">
               Not sure where to start?
@@ -354,10 +648,11 @@ export default function HomePage() {
                   setLoading(true);
                   setError(null);
                   try {
-                    const data = await client.request(GET_RANKED_FEED, {
+                    const data = await client.request<{ getRankedFeed: FeedItem[] }>(GET_RANKED_FEED, {
                       topic: "react performance",
                     });
                     setItems(data.getRankedFeed);
+                    setItemsToShow(INITIAL_ITEMS_TO_SHOW);
                   } catch (err) {
                     console.error(err);
                     setError("Failed to fetch feed. Please try again.");
@@ -365,9 +660,10 @@ export default function HomePage() {
                     setLoading(false);
                   }
                 }}
-                className="font-medium text-slate-200 hover:text-indigo-300 transition-colors underline"
+                className="font-medium text-slate-200 hover:text-indigo-300 transition-colors underline focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900 rounded"
+                aria-label='Search for "react performance"'
               >
-                "react performance"
+                &quot;react performance&quot;
               </button>
               ,{" "}
               <button
@@ -376,10 +672,11 @@ export default function HomePage() {
                   setLoading(true);
                   setError(null);
                   try {
-                    const data = await client.request(GET_RANKED_FEED, {
+                    const data = await client.request<{ getRankedFeed: FeedItem[] }>(GET_RANKED_FEED, {
                       topic: "AI agents in production",
                     });
                     setItems(data.getRankedFeed);
+                    setItemsToShow(INITIAL_ITEMS_TO_SHOW);
                   } catch (err) {
                     console.error(err);
                     setError("Failed to fetch feed. Please try again.");
@@ -387,9 +684,10 @@ export default function HomePage() {
                     setLoading(false);
                   }
                 }}
-                className="font-medium text-slate-200 hover:text-indigo-300 transition-colors underline"
+                className="font-medium text-slate-200 hover:text-indigo-300 transition-colors underline focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900 rounded"
+                aria-label='Search for "AI agents in production"'
               >
-                "AI agents in production"
+                &quot;AI agents in production&quot;
               </button>
               , or{" "}
               <button
@@ -398,10 +696,11 @@ export default function HomePage() {
                   setLoading(true);
                   setError(null);
                   try {
-                    const data = await client.request(GET_RANKED_FEED, {
+                    const data = await client.request<{ getRankedFeed: FeedItem[] }>(GET_RANKED_FEED, {
                       topic: "frontend architecture",
                     });
                     setItems(data.getRankedFeed);
+                    setItemsToShow(INITIAL_ITEMS_TO_SHOW);
                   } catch (err) {
                     console.error(err);
                     setError("Failed to fetch feed. Please try again.");
@@ -409,9 +708,10 @@ export default function HomePage() {
                     setLoading(false);
                   }
                 }}
-                className="font-medium text-slate-200 hover:text-indigo-300 transition-colors underline"
+                className="font-medium text-slate-200 hover:text-indigo-300 transition-colors underline focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900 rounded"
+                aria-label='Search for "frontend architecture"'
               >
-                "frontend architecture"
+                &quot;frontend architecture&quot;
               </button>
               .
             </p>

@@ -2,6 +2,8 @@
 
 An AI-powered feed ranking system that aggregates and ranks articles from multiple sources using semantic relevance, recency, and popularity scores.
 
+🌐 **Live Demo**: [https://app-production-075c.up.railway.app/](https://app-production-075c.up.railway.app/)
+
 ## ✨ Features
 
 - **Multi-Source Aggregation**: Fetches articles from Hacker News, Dev.to, and Reddit (with authentication)

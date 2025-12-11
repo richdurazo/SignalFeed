@@ -233,9 +233,13 @@ export default function HomePage() {
     try {
       const data = await client.request(GET_RANKED_FEED, { topic });
       setItems(data.getRankedFeed);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to fetch feed. Please try again.");
+    } catch (err: any) {
+      console.error("GraphQL Error:", err);
+      const errorMessage =
+        err?.response?.errors?.[0]?.message ||
+        err?.message ||
+        "Failed to fetch feed. Please check your connection and try again.";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

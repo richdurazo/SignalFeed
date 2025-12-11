@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Image from "next/image";
 import { client } from "./lib/graphqlClient";
 import { GET_RANKED_FEED } from "./graphql/getRankedFeed";
 
@@ -255,14 +256,28 @@ export default function HomePage() {
         }
       `}</style>
       <div className="w-full max-w-3xl">
-        <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-            SignalFeed
+        <header className="flex items-center gap-3 mb-6">
+          <Image
+            src="/signalfeed-logo.svg"
+            alt="SignalFeed logo"
+            width={220}
+            height={40}
+            priority
+          />
+        </header>
+
+        <section className="mb-8">
+          <h1 className="text-3xl font-semibold mb-2">
+            Let AI find the signal in your feed.
           </h1>
-          <p className="text-slate-300 text-lg">
-            Enter a topic and let AI curate a ranked feed for you.
+          <p className="text-slate-300">
+            SignalFeed pulls in real posts from around the web and ranks them
+            using AI, so you spend less time digging and more time reading what
+            actually matters. Enter a topic, and SignalFeed finds the most
+            relevant, timely, and useful articles for you—explaining{" "}
+            <span className="italic">why</span> each one made the cut.
           </p>
-        </div>
+        </section>
 
         <form onSubmit={onSubmit} className="flex gap-2 mb-8">
           <input
@@ -323,40 +338,86 @@ export default function HomePage() {
         )}
 
         {!loading && items.length === 0 && !error && (
-          <div className="text-center py-12">
-            <p className="text-slate-400 text-sm mb-2">
-              Try searching for a topic like:
+          <section className="mt-8 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+            <h2 className="text-sm font-semibold text-slate-200 mb-2">
+              Not sure where to start?
+            </h2>
+            <p className="text-sm text-slate-400">
+              Try searching for topics like{" "}
+              <button
+                onClick={async () => {
+                  setTopic("react performance");
+                  setLoading(true);
+                  setError(null);
+                  try {
+                    const data = await client.request(GET_RANKED_FEED, {
+                      topic: "react performance",
+                    });
+                    setItems(data.getRankedFeed);
+                  } catch (err) {
+                    console.error(err);
+                    setError("Failed to fetch feed. Please try again.");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="font-medium text-slate-200 hover:text-indigo-300 transition-colors underline"
+              >
+                "react performance"
+              </button>
+              ,{" "}
+              <button
+                onClick={async () => {
+                  setTopic("AI agents in production");
+                  setLoading(true);
+                  setError(null);
+                  try {
+                    const data = await client.request(GET_RANKED_FEED, {
+                      topic: "AI agents in production",
+                    });
+                    setItems(data.getRankedFeed);
+                  } catch (err) {
+                    console.error(err);
+                    setError("Failed to fetch feed. Please try again.");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="font-medium text-slate-200 hover:text-indigo-300 transition-colors underline"
+              >
+                "AI agents in production"
+              </button>
+              , or{" "}
+              <button
+                onClick={async () => {
+                  setTopic("frontend architecture");
+                  setLoading(true);
+                  setError(null);
+                  try {
+                    const data = await client.request(GET_RANKED_FEED, {
+                      topic: "frontend architecture",
+                    });
+                    setItems(data.getRankedFeed);
+                  } catch (err) {
+                    console.error(err);
+                    setError("Failed to fetch feed. Please try again.");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                className="font-medium text-slate-200 hover:text-indigo-300 transition-colors underline"
+              >
+                "frontend architecture"
+              </button>
+              .
             </p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {["frontend architecture", "AI agents", "SpaceX telemetry"].map(
-                (example) => (
-                  <button
-                    key={example}
-                    onClick={async () => {
-                      setTopic(example);
-                      setLoading(true);
-                      setError(null);
-                      try {
-                        const data = await client.request(GET_RANKED_FEED, {
-                          topic: example,
-                        });
-                        setItems(data.getRankedFeed);
-                      } catch (err) {
-                        console.error(err);
-                        setError("Failed to fetch feed. Please try again.");
-                      } finally {
-                        setLoading(false);
-                      }
-                    }}
-                    className="px-3 py-1 text-xs bg-slate-800 hover:bg-slate-700 rounded-full text-slate-300 transition-colors"
-                  >
-                    {example}
-                  </button>
-                )
-              )}
-            </div>
-          </div>
+          </section>
         )}
+
+        <footer className="mt-12 text-xs text-slate-500">
+          Built with TypeScript, GraphQL, and a lot of curiosity. SignalFeed is
+          an experimental project and may occasionally be wrong, slow, or weird.
+        </footer>
       </div>
     </main>
   );

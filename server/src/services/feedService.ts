@@ -91,7 +91,7 @@ export async function getRankedFeed(topic: string): Promise<FeedItem[]> {
 
   rawArticles.forEach((article, index) => {
     const recencyScore = computeRecencyScore(article.createdAt);
-    const popularityScore = computePopularityScore(article.points);
+    const popularityScore = computePopularityScore(article.points ?? null);
     let relevanceScore = 0;
 
     const articleEmbedding = articleEmbeddings[index];

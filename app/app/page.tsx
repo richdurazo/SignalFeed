@@ -92,41 +92,84 @@ const ScoreBar = memo(function ScoreBar({
   );
 });
 
+type SourceConfig = {
+  label: string;
+  logo: string;
+  bgColor: string;
+  imageClass: string;
+};
+
 const SourceBadge = memo(function SourceBadge({ source }: { source: DataSource }) {
-  const sourceConfig = useMemo(() => ({
+  const [imageError, setImageError] = useState(false);
+  
+  const sourceConfig = useMemo<Record<DataSource, SourceConfig>>(() => ({
     hackernews: {
-      label: "HN",
-      color: "bg-orange-500/20 text-orange-300 border-orange-500/30",
+      label: "Hacker News",
+      logo: "https://news.ycombinator.com/favicon.ico",
+      bgColor: "bg-orange-500/10",
+      imageClass: "",
     },
     reddit: {
       label: "Reddit",
-      color: "bg-orange-600/20 text-orange-200 border-orange-600/30",
+      logo: "https://www.redditstatic.com/desktop2x/img/favicon/apple-icon-57x57.png",
+      bgColor: "bg-orange-500/10",
+      imageClass: "brightness-125 contrast-110", // Lighten Reddit logo for dark mode
     },
     devto: {
       label: "Dev.to",
-      color: "bg-green-500/20 text-green-300 border-green-500/30",
+      logo: "https://dev.to/favicon.ico",
+      bgColor: "bg-green-500/10",
+      imageClass: "",
     },
     producthunt: {
-      label: "PH",
-      color: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+      label: "Product Hunt",
+      logo: "https://www.producthunt.com/favicon.ico",
+      bgColor: "bg-purple-500/10",
+      imageClass: "",
     },
     lobsters: {
       label: "Lobsters",
-      color: "bg-red-500/20 text-red-300 border-red-500/30",
+      logo: "https://lobste.rs/apple-touch-icon-144.png",
+      bgColor: "bg-red-500/10",
+      imageClass: "",
     },
     github: {
       label: "GitHub",
-      color: "bg-gray-500/20 text-gray-300 border-gray-500/30",
+      logo: "https://github.com/favicon.ico",
+      bgColor: "bg-gray-500/10",
+      imageClass: "bg-white/90 rounded p-0.5", // Add white background to GitHub logo
     },
   }), []);
 
-  const config = sourceConfig[source] || sourceConfig.hackernews;
+  // Normalize source to lowercase to handle any case variations from GraphQL
+  const normalizedSource = (source?.toLowerCase() || "hackernews") as DataSource;
+  const config = sourceConfig[normalizedSource] || sourceConfig.hackernews;
+  
+  // Debug logging in development to catch mismatches
+  if (process.env.NODE_ENV === "development" && !sourceConfig[normalizedSource]) {
+    console.warn(`Unknown source value: "${source}" (normalized: "${normalizedSource}")`);
+  }
 
   return (
     <span
-      className={`text-xs font-medium px-2 py-0.5 rounded border ${config.color}`}
+      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md ${config.bgColor} border border-slate-700/50`}
+      title={config.label}
+      aria-label={config.label}
     >
-      {config.label}
+      {!imageError ? (
+        <Image
+          src={config.logo}
+          alt=""
+          width={16}
+          height={16}
+          className={`rounded-sm ${config.imageClass}`}
+          unoptimized // Favicons are small and external, no need for optimization
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <span className="text-xs font-medium text-slate-300">{config.label}</span>
+      )}
+      <span className="sr-only">{config.label}</span>
     </span>
   );
 });

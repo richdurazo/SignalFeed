@@ -71,14 +71,29 @@ export async function fetchDevToArticles(
     }
 
     // Take top 10 most relevant
-    const result = articles.slice(0, 10).map((article) => ({
-      id: `devto-${article.id}`,
-      title: article.title,
-      url: `https://dev.to${article.url}`,
-      createdAt: article.published_at,
-      points: article.positive_reactions_count || article.public_reactions_count,
-      source: "devto" as DataSource,
-    }));
+    const result = articles.slice(0, 10).map((article) => {
+      // Handle URL - API returns path like "/username/article-slug" or full URL
+      let articleUrl = article.url;
+      if (articleUrl.startsWith("http")) {
+        // Already a full URL, use as-is
+        articleUrl = articleUrl;
+      } else if (articleUrl.startsWith("/")) {
+        // Path starting with /, prepend domain
+        articleUrl = `https://dev.to${articleUrl}`;
+      } else {
+        // Path without leading /, add it
+        articleUrl = `https://dev.to/${articleUrl}`;
+      }
+      
+      return {
+        id: `devto-${article.id}`,
+        title: article.title,
+        url: articleUrl,
+        createdAt: article.published_at,
+        points: article.positive_reactions_count || article.public_reactions_count,
+        source: "devto" as DataSource,
+      };
+    });
 
     console.log(`Dev.to returning ${result.length} articles`);
     return result;
